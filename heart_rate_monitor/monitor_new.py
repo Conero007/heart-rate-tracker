@@ -1,12 +1,6 @@
-"""
-Webcam Heart Rate Monitor
-Gilad Oved
-December 2018
-"""
-
-import numpy as np
-import cv2
 import sys
+import cv2
+import numpy as np
 
 # Helper Methods
 def buildGauss(frame, levels):
@@ -31,10 +25,10 @@ if len(sys.argv) == 2:
     webcam = cv2.VideoCapture(sys.argv[1])
 else:
     webcam = cv2.VideoCapture(0)
-realWidth = 320
-realHeight = 240
-videoWidth = 160
-videoHeight = 120
+realWidth = 320 * 2
+realHeight = 240 * 2
+videoWidth = 160 * 2
+videoHeight = 120 * 2
 videoChannels = 3
 videoFrameRate = 15
 webcam.set(3, realWidth)
@@ -59,17 +53,20 @@ lineType = 2
 boxColor = (0, 255, 0)
 boxWeight = 3
 
-# Initialize Gaussian Pyramid
-firstFrame = np.zeros((videoHeight, videoWidth, videoChannels))
-firstGauss = buildGauss(firstFrame, levels + 1)[levels]
-videoGauss = np.zeros(
-    (bufferSize, firstGauss.shape[0], firstGauss.shape[1], videoChannels)
-)
-fourierTransformAvg = np.zeros((bufferSize))
+def  initialize_Gaussian_Pyramid():
+    firstFrame = np.zeros((videoHeight, videoWidth, videoChannels))
+    firstGauss = buildGauss(firstFrame, levels + 1)[levels]
+    videoGauss = np.zeros(
+        (bufferSize, firstGauss.shape[0], firstGauss.shape[1], videoChannels)
+    )
+    fourierTransformAvg = np.zeros((bufferSize))
 
-# Bandpass Filter for Specified Frequencies
-frequencies = (1.0 * videoFrameRate) * np.arange(bufferSize) / (1.0 * bufferSize)
-mask = (frequencies >= minFrequency) & (frequencies <= maxFrequency)
+    return videoGauss, fourierTransformAvg
+
+def bandpass_filter():
+    frequencies = (1.0 * videoFrameRate) * np.arange(bufferSize) / (1.0 * bufferSize)
+    mask = (frequencies >= minFrequency) & (frequencies <= maxFrequency)
+    return mask, frequencies
 
 # Heart Rate Calculation Variables
 bpmCalculationFrequency = 15
@@ -90,10 +87,12 @@ while True:
     ]
 
     # Construct Gaussian Pyramid
+    videoGauss, fourierTransformAvg = initialize_Gaussian_Pyramid()
     videoGauss[bufferIndex] = buildGauss(detectionFrame, levels + 1)[levels]
     fourierTransform = np.fft.fft(videoGauss, axis=0)
 
     # Bandpass Filter
+    mask, frequencies = bandpass_filter()
     fourierTransform[mask == False] = 0
 
     # Grab a Pulse
