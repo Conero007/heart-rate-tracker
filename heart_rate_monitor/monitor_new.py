@@ -1,194 +1,137 @@
 import cv2
-import sys
 import numpy as np
 
 
-def buildGauss(frame, levels):
-    pyramid = [frame]
-    for _ in range(levels):
-        frame = cv2.pyrDown(frame)
-        pyramid.append(frame)
-    return pyramid
+class Monitor:
+    def __init__(self, webcam=None) -> None:
+        self.frame_count = 0
 
+        if webcam:
+            self.webcam = webcam
+            self.setup()
+        else:
+            raise ValueError("cv2.VideoCapture object not provided")
 
-def reconstruct_frame_helper(pyramid, index, levels, videoHeight, videoWidth):
-    filteredFrame = pyramid[index]
-    for _ in range(levels):
-        filteredFrame = cv2.pyrUp(filteredFrame)
-    filteredFrame = filteredFrame[:videoHeight, :videoWidth]
-    return filteredFrame
+    def setup(self) -> None:
+        # Setup Required Parameters
+        self.setup_webcam_parameters()
+        self.output_display_parameters()
+        self.color_magnification_parameters()
+        self.heart_rate_calculation_parameters()
 
+        # Initialize Gaussian filtered
+        self.initialize_gaussian_filtered()
 
-def initialize_gaussian_pyramid(
-    videoHeight, videoWidth, videoChannels, levels, bufferSize
-):
-    firstFrame = np.zeros((videoHeight, videoWidth, videoChannels))
-    firstGauss = buildGauss(firstFrame, levels + 1)[levels]
-    videoGauss = np.zeros(
-        (bufferSize, firstGauss.shape[0], firstGauss.shape[1], videoChannels)
-    )
-    fourierTransformAvg = np.zeros((bufferSize))
+        # Bandpass Filter for Specified Frequencies
+        self.initialize_bandpass_filter()
 
-    return videoGauss, fourierTransformAvg
+    def heart_rate_calculation_parameters(self):
+        self.bpm_calculation_frequency = 15
+        self.bpm_buffer_index = 0
+        self.bpm_buffer_size = 10
+        self.bpm_buffer = np.zeros((self.bpm_buffer_size))
 
+    def output_display_parameters(self):
+        self.font = cv2.FONT_HERSHEY_SIMPLEX
+        self.font_scale = 1
+        self.font_color = (0, 0, 0)
+        self.line_type = 2
+        self.box_color = (0, 255, 0)
+        self.box_weight = 3
 
-def initialize_bandpass_filter(videoFrameRate, bufferSize, maxFrequency, minFrequency):
-    frequencies = (1.0 * videoFrameRate) * np.arange(bufferSize) / (1.0 * bufferSize)
-    mask = (frequencies >= minFrequency) & (frequencies <= maxFrequency)
-    return frequencies, mask
+    def color_magnification_parameters(self):
+        self.levels = 3
+        self.alpha = 170
+        self.min_frequency = 1.0
+        self.max_frequency = 2.0
+        self.buffer_size = 150
+        self.buffer_index = 0
 
+    def setup_webcam_parameters(self):
+        self.real_width = 320
+        self.real_height = 240
+        self.video_width = 160
+        self.video_height = 120
+        self.video_channels = 3
+        self.video_frame_rate = self.webcam.get(cv2.CAP_PROP_FPS)
+        self.webcam.set(3, self.real_width)
+        self.webcam.set(4, self.real_height)
 
-def grab_pulse(
-    bufferSize,
-    fourierTransform,
-    fourierTransformAvg,
-    frequencies,
-    bpmBuffer,
-    bpmBufferSize,
-    bpmBufferIndex,
-):
-    for buf in range(bufferSize):
-        fourierTransformAvg[buf] = np.real(fourierTransform[buf]).mean()
-    hz = frequencies[np.argmax(fourierTransformAvg)]
-    bpm = 60.0 * hz
-    bpmBuffer[bpmBufferIndex] = bpm
-    bpmBufferIndex = (bpmBufferIndex + 1) % bpmBufferSize
-    return bpmBufferIndex
+    def buildGauss(self, frame):
+        filtered = [frame]
+        for _ in range(self.levels + 1):
+            frame = cv2.pyrDown(frame)
+            filtered.append(frame)
+        return filtered
 
-
-def reconstruct_frame(
-    filtered,
-    levels,
-    videoHeight,
-    videoWidth,
-    detectionFrame,
-    bufferSize,
-    frame,
-    realHeight,
-    realWidth,
-    bufferIndex,
-):
-    filteredFrame = reconstruct_frame_helper(
-        filtered, bufferIndex, levels, videoHeight, videoWidth
-    )
-    outputFrame = detectionFrame + filteredFrame
-    outputFrame = cv2.convertScaleAbs(outputFrame)
-
-    bufferIndex = (bufferIndex + 1) % bufferSize
-
-    frame[
-        videoHeight // 2 : realHeight - videoHeight // 2,
-        videoWidth // 2 : realWidth - videoWidth // 2,
-        :,
-    ] = outputFrame
-
-    return bufferIndex
-
-
-def main(webcam):
-    # Webcam Parameters
-    realWidth = 320 * 2
-    realHeight = 240 * 2
-    videoWidth = 160 * 2
-    videoHeight = 120 * 2
-    videoChannels = 3
-    videoFrameRate = webcam.get(cv2.CAP_PROP_FPS)
-    webcam.set(3, realWidth)
-    webcam.set(4, realHeight)
-
-    # Color Magnification Parameters
-    levels = 3
-    alpha = 170
-    minFrequency = 1.0
-    maxFrequency = 2.0
-    bufferSize = 150
-    bufferIndex = 0
-
-    # Output Display Parameters
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    fontScale = 1
-    fontColor = (0, 0, 0)
-    lineType = 2
-    boxColor = (0, 255, 0)
-    boxWeight = 3
-
-    # Initialize Gaussian Pyramid
-    videoGauss, fourierTransformAvg = initialize_gaussian_pyramid(
-        videoHeight, videoWidth, videoChannels, levels, bufferSize
-    )
-
-    # Bandpass Filter for Specified Frequencies
-    frequencies, mask = initialize_bandpass_filter(
-        videoFrameRate, bufferSize, maxFrequency, minFrequency
-    )
-
-    # Heart Rate Calculation Variables
-    bpmCalculationFrequency = 15
-    bpmBufferIndex = 0
-    bpmBufferSize = 10
-    bpmBuffer = np.zeros((bpmBufferSize))
-
-    frame_count = 0
-    while True:
-        ret, frame = webcam.read()
-        if ret == False:
-            break
-
-        detectionFrame = frame[
-            videoHeight // 2 : realHeight - videoHeight // 2,
-            videoWidth // 2 : realWidth - videoWidth // 2,
-            :,
-        ]
-
-        # Construct Gaussian Pyramid
-        videoGauss[bufferIndex] = buildGauss(detectionFrame, levels + 1)[levels]
-        fourierTransform = np.fft.fft(videoGauss, axis=0)
-
-        # Bandpass Filter
-        fourierTransform[mask == False] = 0
-
-        # Grab a Pulse
-        if bufferIndex % bpmCalculationFrequency == 0:
-            frame_count += 1
-            bpmBufferIndex = grab_pulse(
-                bufferSize,
-                fourierTransform,
-                fourierTransformAvg,
-                frequencies,
-                bpmBuffer,
-                bpmBufferSize,
-                bpmBufferIndex,
+    def initialize_gaussian_filtered(self):
+        firstFrame = np.zeros(
+            (self.video_height, self.video_width, self.video_channels)
+        )
+        firstGauss = self.buildGauss(firstFrame)[self.levels]
+        self.videoGauss = np.zeros(
+            (
+                self.buffer_size,
+                firstGauss.shape[0],
+                firstGauss.shape[1],
+                self.video_channels,
             )
+        )
+        self.fourierTransformAvg = np.zeros((self.buffer_size))
 
-        # Amplify
-        filtered = np.real(np.fft.ifft(fourierTransform, axis=0))
-        filtered = filtered * alpha
-
-        # Reconstruct Resulting Frame
-        bufferIndex = reconstruct_frame(
-            filtered,
-            levels,
-            videoHeight,
-            videoWidth,
-            detectionFrame,
-            bufferSize,
-            frame,
-            realHeight,
-            realWidth,
-            bufferIndex,
+    def initialize_bandpass_filter(self):
+        self.frequencies = (
+            (1.0 * self.video_frame_rate)
+            * np.arange(self.buffer_size)
+            / (1.0 * self.buffer_size)
+        )
+        self.mask = (self.frequencies >= self.min_frequency) & (
+            self.frequencies <= self.max_frequency
         )
 
+    def grab_pulse(self, fourierTransform):
+        for buf in range(self.buffer_size):
+            self.fourierTransformAvg[buf] = np.real(fourierTransform[buf]).mean()
+        hz = self.frequencies[np.argmax(self.fourierTransformAvg)]
+        bpm = 60.0 * hz
+        self.bpm_buffer[self.bpm_buffer_index] = bpm
+        self.bpm_buffer_index = (self.bpm_buffer_index + 1) % self.bpm_buffer_size
+
+    def reconstruct_frame_helper(self, filtered):
+        filteredFrame = filtered[self.buffer_index]
+        for _ in range(self.levels):
+            filteredFrame = cv2.pyrUp(filteredFrame)
+        filteredFrame = filteredFrame[: self.video_height, : self.video_width]
+        return filteredFrame
+
+    def reconstruct_frame(self, filtered, detectionFrame, frame):
+        filteredFrame = self.reconstruct_frame_helper(filtered)
+        outputFrame = detectionFrame + filteredFrame
+        outputFrame = cv2.convertScaleAbs(outputFrame)
+
+        self.buffer_index = (self.buffer_index + 1) % self.buffer_size
+
+        frame[
+            self.video_height // 2 : self.real_height - self.video_height // 2,
+            self.video_width // 2 : self.real_width - self.video_width // 2,
+            :,
+        ] = outputFrame
+
+    def draw_on_frame(self, frame):
         cv2.rectangle(
             frame,
-            (videoWidth // 2, videoHeight // 2),
-            (realWidth - videoWidth // 2, realHeight - videoHeight // 2),
-            boxColor,
-            boxWeight,
+            (self.video_width // 2, self.video_height // 2),
+            (
+                self.real_width - self.video_width // 2,
+                self.real_height - self.video_height // 2,
+            ),
+            self.box_color,
+            self.box_weight,
         )
 
-        if frame_count > bpmBufferSize:
-            text_location = (videoWidth // 2 + 5, 30)
-            text = f"BPM: {int(bpmBuffer.mean())}"
+        if self.frame_count > self.bpm_buffer_size:
+            text_location = (self.video_width // 2 + 5, 30)
+            text = f"BPM: {int(self.bpm_buffer.mean())}"
         else:
             text_location = (20, 30)
             text = "Calculating BPM..."
@@ -197,20 +140,61 @@ def main(webcam):
             frame,
             text,
             text_location,
-            font,
-            fontScale,
-            fontColor,
-            lineType,
+            self.font,
+            self.font_scale,
+            self.font_color,
+            self.line_type,
         )
 
-        cv2.imshow("Webcam Heart Rate Monitor", frame)
+    def run(self):
+        while True:
+            ret, frame = self.webcam.read()
+            if ret == False:
+                break
 
-        if cv2.waitKey(1) & 0xFF == ord("q"):
-            break
+            frame = self.get_processed_frame(frame)
+            cv2.imshow("self.Webcam Heart Rate Monitor", frame)
+
+            if cv2.waitKey(1) & 0xFF == ord("q"):
+                break
+
+    def get_processed_frame(self, frame):
+        detectionFrame = frame[
+            self.video_height // 2 : self.real_height - self.video_height // 2,
+            self.video_width // 2 : self.real_width - self.video_width // 2,
+            :,
+        ]
+
+        # Construct Gaussian filtered
+        self.videoGauss[self.buffer_index] = self.buildGauss(detectionFrame)[
+            self.levels
+        ]
+        fourierTransform = np.fft.fft(self.videoGauss, axis=0)
+
+        # Bandpass Filter
+        fourierTransform[self.mask == False] = 0
+
+        # Grab a Pulse
+        if self.buffer_index % self.bpm_calculation_frequency == 0:
+            self.frame_count += 1
+            self.grab_pulse(fourierTransform)
+
+        # Amplify
+        filtered = np.real(np.fft.ifft(fourierTransform, axis=0))
+        filtered = filtered * self.alpha
+
+        # Reconstruct Resulting Frame
+        self.reconstruct_frame(filtered, detectionFrame, frame)
+
+        # Draw on Frame
+        self.draw_on_frame(frame)
+
+        return frame
 
 
 if __name__ == "__main__":
     webcam = cv2.VideoCapture(0)
-    main(webcam)
+    monitor = Monitor(webcam)
+    monitor.run()
     webcam.release()
     cv2.destroyAllWindows()
