@@ -9,8 +9,7 @@ views = Blueprint("views", __name__)
 
 @views.route("/video_feed")
 def video_feed():
-    print(current_user)
-    return Response(gen_frames(camera=current_user.camera), mimetype="multipart/x-mixed-replace; boundary=frame")
+    return Response(current_user.hrt.gen_frames(), mimetype="multipart/x-mixed-replace; boundary=frame")
 
 
 @views.route("/")
@@ -19,12 +18,12 @@ def home():
     return render_template("home.html", user=current_user)
 
 
-def gen_frames(camera):
-    while True:
-        success, frame = camera.read()
-        if not success:
-            break
-        frame = cv2.flip(frame, 1)
-        _, buffer = cv2.imencode(".jpg", frame)
-        frame = buffer.tobytes()
-        yield (b"--frame\r\n" b"Content-Type: image/jpeg\r\n\r\n" + frame + b"\r\n")
+# def gen_frames(camera):
+#     while True:
+#         success, frame = camera.read()
+#         if not success:
+#             break
+#         frame = cv2.flip(frame, 1)
+#         _, buffer = cv2.imencode(".jpg", frame)
+#         frame = buffer.tobytes()
+#         yield (b"--frame\r\n" b"Content-Type: image/jpeg\r\n\r\n" + frame + b"\r\n")
