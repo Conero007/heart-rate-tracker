@@ -13,7 +13,6 @@ def login():
         password = request.form.get("password")
 
         user = get_user(email)
-        print(user)
 
         if user and check_password_hash(user.password, password):
             flash("Logged in successfully!", category="success")

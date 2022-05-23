@@ -142,6 +142,16 @@ class Detector:
             self.line_type,
         )
 
+        # cv2.putText(
+        #     frame,
+        #     str(self.frame_count),
+        #     (self.video_width - 10, self.video_height - 10),
+        #     self.font,
+        #     self.font_scale,
+        #     self.font_color,
+        #     self.line_type,
+        # )
+
     def gen_frames(self):
         while True:
             ret, frame = self.webcam.read()
