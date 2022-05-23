@@ -2,15 +2,11 @@ import cv2
 import numpy as np
 
 
-class Monitor:
-    def __init__(self, webcam=None) -> None:
+class Detector:
+    def __init__(self, webcam: cv2.VideoCapture = None) -> None:
         self.frame_count = 0
-
-        if webcam:
-            self.webcam = webcam
-            self.setup()
-        else:
-            raise ValueError("cv2.VideoCapture object not provided")
+        self.webcam = webcam
+        self.setup()
 
     def setup(self) -> None:
         # Setup Required Parameters
@@ -146,6 +142,28 @@ class Monitor:
             self.line_type,
         )
 
+        # cv2.putText(
+        #     frame,
+        #     str(self.frame_count),
+        #     (self.video_width - 10, self.video_height - 10),
+        #     self.font,
+        #     self.font_scale,
+        #     self.font_color,
+        #     self.line_type,
+        # )
+
+    def gen_frames(self):
+        while True:
+            ret, frame = self.webcam.read()
+            if ret == False:
+                break
+
+            frame = cv2.flip(frame, 1)
+            frame = self.get_processed_frame(frame)
+            _, buffer = cv2.imencode(".jpg", frame)
+            frame = buffer.tobytes()
+            yield (b"--frame\r\n" b"Content-Type: image/jpeg\r\n\r\n" + frame + b"\r\n")
+
     def run(self):
         while True:
             ret, frame = self.webcam.read()
@@ -194,7 +212,7 @@ class Monitor:
 
 if __name__ == "__main__":
     webcam = cv2.VideoCapture(0)
-    monitor = Monitor(webcam)
+    monitor = Detector(webcam)
     monitor.run()
     webcam.release()
     cv2.destroyAllWindows()

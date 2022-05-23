@@ -1,6 +1,4 @@
 from website import create_app
-# from heart_rate_monitor.monitor_new import Monitor
-
 
 app = create_app()
 
